@@ -209,173 +209,198 @@
     </div>
 
     <script>
-        let scannedData = [];
-        let scanning = false;
-        let videoStream = null;
-        
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const startButton = document.getElementById('startButton');
-        const stopButton = document.getElementById('stopButton');
-        const exportExcelButton = document.getElementById('exportExcel');
-        const statusElement = document.getElementById('status');
-        const lastDataElement = document.getElementById('lastData');
-        const tableBody = document.getElementById('tableBody');
-        
-        // Inisialisasi data dari localStorage jika ada
-        if (localStorage.getItem('scannedData')) {
-            scannedData = JSON.parse(localStorage.getItem('scannedData'));
-            updateTable();
+    let scannedData = [];
+    let scanning = false;
+    let videoStream = null;
+    
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const startButton = document.getElementById('startButton');
+    const stopButton = document.getElementById('stopButton');
+    const exportExcelButton = document.getElementById('exportExcel');
+    const statusElement = document.getElementById('status');
+    const lastDataElement = document.getElementById('lastData');
+    const tableBody = document.getElementById('tableBody');
+    
+    // 1. FORMAT BARU: Load data lama yang masih pakai format 'nama' dan 'alamat'
+    if (localStorage.getItem('scannedData')) {
+        const oldData = JSON.parse(localStorage.getItem('scannedData'));
+        // Konversi ke format baru (n, a) jika perlu
+        scannedData = oldData.map(item => ({
+            id: item.id || Date.now(),
+            timestamp: item.timestamp,
+            n: item.n || item.nama, // Gunakan 'n' baru, atau fallback ke 'nama' lama
+            a: item.a || item.alamat, // Gunakan 'a' baru, atau fallback ke 'alamat' lama
+            status: 'Berhasil'
+        }));
+        updateTable();
+    }
+    
+    startButton.addEventListener('click', async () => {
+        try {
+            videoStream = await navigator.mediaDevices.getUserMedia({
+                video: { 
+                    facingMode: "environment",
+                    width: { ideal: 1280 } // Resolusi lebih jelas untuk scan QR
+                }
+            });
+            
+            video.srcObject = videoStream;
+            video.play();
+            scanning = true;
+            statusElement.textContent = "🔍 Sedang scanning... Arahkan kamera ke QR Code.";
+            statusElement.style.color = "#4CAF50";
+            requestAnimationFrame(scanQRCode); // Mulai loop scan
+        } catch (err) {
+            console.error("Error mengakses kamera:", err.name, err.message);
+            statusElement.textContent = "❌ Gagal mengakses kamera: " + err.message;
+            statusElement.style.color = "#f44336";
         }
+    });
+    
+    stopButton.addEventListener('click', () => {
+        scanning = false;
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+            video.srcObject = null;
+        }
+        statusElement.textContent = "⏹️ Scan dihentikan";
+        statusElement.style.color = "#ff9800";
+    });
+    
+    function scanQRCode() {
+        if (!scanning || !videoStream) return;
         
-        startButton.addEventListener('click', async () => {
-            try {
-                videoStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" }
-                });
-                
-                video.srcObject = videoStream;
-                scanning = true;
-                statusElement.textContent = "Sedang scanning...";
-                statusElement.style.color = "#4CAF50";
-                scanQRCode();
-            } catch (err) {
-                console.error("Error mengakses kamera:", err);
-                statusElement.textContent = "Gagal mengakses kamera";
-                statusElement.style.color = "#f44336";
-            }
-        });
+        const canvasElement = document.getElementById('canvas');
+        const canvasContext = canvasElement.getContext('2d', { willReadFrequently: true });
         
-        stopButton.addEventListener('click', () => {
-            scanning = false;
-            if (videoStream) {
-                videoStream.getTracks().forEach(track => track.stop());
-            }
-            statusElement.textContent = "Scan dihentikan";
-            statusElement.style.color = "#ff9800";
-        });
-        
-        function scanQRCode() {
-            if (!scanning) return;
-            
-            const canvasElement = document.getElementById('canvas');
-            const canvasContext = canvasElement.getContext('2d');
-            
-            // Set canvas size sesuai video
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
             canvasElement.width = video.videoWidth;
             canvasElement.height = video.videoHeight;
-            
-            // Gambar frame video ke canvas
             canvasContext.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
-            
-            // Ambil image data dari canvas
             const imageData = canvasContext.getImageData(0, 0, canvasElement.width, canvasElement.height);
             
-            // Decode QR code
-            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            // 2. FORMAT BARU: jsQR akan decode teks apapun dari QR
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: "dontInvert",
+            });
             
             if (code) {
                 try {
-                    const data = JSON.parse(code.data);
+                    let data;
+                    // Coba parse sebagai JSON (format baru: {"n":"Nama","a":"Alamat"})
+                    try {
+                        data = JSON.parse(code.data);
+                    } catch (e) {
+                        // Jika bukan JSON, anggap sebagai teks biasa dan buat objek sederhana
+                        data = { n: "User", a: code.data };
+                    }
                     
-                    // Cek apakah data sudah pernah di-scan
+                    // 3. FORMAT BARU: Gunakan properti 'n' dan 'a' (bukan 'nama' dan 'alamat')
+                    const userNama = data.n || data.nama || "Tidak Diketahui";
+                    const userAlamat = data.a || data.alamat || code.data.substring(0, 50);
+                    const userTimestamp = data.timestamp || new Date().toISOString();
+                    
+                    // Cek duplikat dalam 10 detik terakhir
                     const isDuplicate = scannedData.some(item => 
-                        item.nama === data.nama && 
-                        item.alamat === data.alamat &&
-                        Math.abs(new Date(item.timestamp) - new Date(data.timestamp)) < 5000 // 5 detik
+                        (item.n === userNama && item.a === userAlamat) &&
+                        (new Date() - new Date(item.timestamp) < 10000)
                     );
                     
                     if (!isDuplicate) {
-                        // Tambah data baru
-                        scannedData.unshift({
+                        const newEntry = {
                             id: Date.now(),
-                            timestamp: data.timestamp || new Date().toISOString(),
-                            nama: data.nama,
-                            alamat: data.alamat,
-                            status: 'Berhasil'
-                        });
+                            timestamp: userTimestamp,
+                            n: userNama,
+                            a: userAlamat,
+                            status: '✅ Berhasil'
+                        };
                         
-                        // Simpan ke localStorage
+                        scannedData.unshift(newEntry);
                         localStorage.setItem('scannedData', JSON.stringify(scannedData));
                         
-                        // Update tampilan
                         updateTable();
-                        lastDataElement.textContent = `${data.nama} - ${data.alamat}`;
+                        lastDataElement.textContent = `${userNama} - ${userAlamat.substring(0,30)}...`;
+                        statusElement.textContent = "🎉 Berhasil scan! Data tersimpan.";
                         
-                        // Beri feedback sukses
-                        statusElement.textContent = "QR Code berhasil di-scan!";
-                        statusElement.style.color = "#4CAF50";
-                        
-                        // Hentikan scanning sementara
+                        // Berhenti sebentar lalu lanjutkan scan
                         scanning = false;
                         setTimeout(() => {
                             scanning = true;
-                            statusElement.textContent = "Sedang scanning...";
-                            scanQRCode();
-                        }, 2000);
+                            statusElement.textContent = "🔍 Sedang scanning...";
+                            requestAnimationFrame(scanQRCode);
+                        }, 1500);
+                        return; // Keluar dari function untuk skip requestAnimationFrame di bawah
                     } else {
-                        statusElement.textContent = "Data sudah pernah di-scan";
+                        statusElement.textContent = "⚠️ Data sudah discan baru saja";
                         statusElement.style.color = "#ff9800";
                     }
                 } catch (e) {
-                    statusElement.textContent = "Format QR Code tidak valid";
-                    statusElement.style.color = "#f44336";
+                    console.error("Error processing QR:", e);
+                    statusElement.textContent = "❌ Gagal memproses data QR";
                 }
             }
-            
-            if (scanning) {
-                requestAnimationFrame(scanQRCode);
-            }
         }
         
-        function updateTable() {
-            tableBody.innerHTML = '';
-            scannedData.forEach((data, index) => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${index + 1}</td>
-                    <td>${new Date(data.timestamp).toLocaleString('id-ID')}</td>
-                    <td>${data.nama}</td>
-                    <td>${data.alamat}</td>
-                    <td><span class="status status-success">${data.status}</span></td>
-                `;
-                tableBody.appendChild(row);
-            });
+        if (scanning) {
+            requestAnimationFrame(scanQRCode);
+        }
+    }
+    
+    function updateTable() {
+        tableBody.innerHTML = '';
+        scannedData.forEach((data, index) => {
+            const row = document.createElement('tr');
+            // 4. FORMAT BARU: Tampilkan 'n' dan 'a'
+            row.innerHTML = `
+                <td>${index + 1}</td>
+                <td>${new Date(data.timestamp).toLocaleString('id-ID')}</td>
+                <td><strong>${data.n}</strong></td>
+                <td>${data.a}</td>
+                <td><span class="status status-success">${data.status}</span></td>
+            `;
+            tableBody.appendChild(row);
+        });
+    }
+    
+    exportExcelButton.addEventListener('click', () => {
+        if (scannedData.length === 0) {
+            alert("📭 Belum ada data untuk di-export!");
+            return;
         }
         
-        exportExcelButton.addEventListener('click', () => {
-            if (scannedData.length === 0) {
-                alert("Belum ada data untuk di-export!");
-                return;
-            }
-            
-            // Format data untuk Excel
-            const worksheetData = [
-                ["No", "Timestamp", "Nama", "Alamat", "Status"],
-                ...scannedData.map((item, index) => [
-                    index + 1,
-                    new Date(item.timestamp).toLocaleString('id-ID'),
-                    item.nama,
-                    item.alamat,
-                    item.status
-                ])
-            ];
-            
-            const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Data User");
-            
-            // Simpan file
-            const filename = `Data_User_${new Date().toISOString().split('T')[0]}.xlsx`;
-            XLSX.writeFile(workbook, filename);
-        });
+        // 5. FORMAT BARU: Header dan data menggunakan 'n' dan 'a'
+        const worksheetData = [
+            ["No", "Timestamp", "Nama (n)", "Alamat (a)", "Status"],
+            ...scannedData.map((item, index) => [
+                index + 1,
+                new Date(item.timestamp).toLocaleString('id-ID'),
+                item.n,
+                item.a,
+                item.status
+            ])
+        ];
         
-        // Auto-start scanning jika diizinkan
-        window.addEventListener('load', () => {
-            setTimeout(() => {
-                startButton.click();
-            }, 1000);
-        });
-    </script>
+        const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Data User");
+        
+        // 6. Nama file yang lebih aman
+        const dateStr = new Date().toISOString().slice(0,10).replace(/-/g, '');
+        const filename = `Data_User_${dateStr}.xlsx`;
+        
+        XLSX.writeFile(workbook, filename);
+        statusElement.textContent = `📁 File "${filename}" berhasil di-download!`;
+        statusElement.style.color = "#4CAF50";
+    });
+    
+    // Auto-focus ke video untuk UX yang lebih baik
+    video.addEventListener('loadeddata', () => {
+        if (scanning) {
+            statusElement.textContent = "🎥 Kamera siap. Arahkan ke QR Code.";
+        }
+    });
+</script>
 </body>
+
 </html>
