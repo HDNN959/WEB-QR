@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Scan QR Code</title>
+    <script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .content {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+        }
+        
+        .scanner-section, .data-section {
+            flex: 1;
+            min-width: 300px;
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        h2 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        #scanner-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        
+        #video {
+            width: 100%;
+            border-radius: 10px;
+            border: 3px solid #f5576c;
+        }
+        
+        #canvas {
+            display: none;
+        }
+        
+        .scan-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px;
+            height: 200px;
+            border: 2px solid #4CAF50;
+            border-radius: 10px;
+            pointer-events: none;
+        }
+        
+        .controls {
+            margin-top: 20px;
+            text-align: center;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 5px;
+            transition: transform 0.3s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn-excel {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        }
+        
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status-success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Admin Scanner QR Code</h1>
+            <p>Scan QR Code dari user untuk menyimpan data ke Excel</p>
+        </div>
+        
+        <div class="content">
+            <div class="scanner-section">
+                <h2>Scanner Kamera</h2>
+                <div id="scanner-container">
+                    <video id="video" autoplay playsinline></video>
+                    <canvas id="canvas"></canvas>
+                    <div class="scan-overlay"></div>
+                </div>
+                
+                <div class="controls">
+                    <button id="startButton">Mulai Scan</button>
+                    <button id="stopButton">Stop Scan</button>
+                    <button id="exportExcel" class="btn-excel">Export ke Excel</button>
+                </div>
+                
+                <div id="result">
+                    <strong>Status:</strong> <span id="status">Kamera belum diaktifkan</span><br>
+                    <strong>Data Terakhir:</strong> <span id="lastData">-</span>
+                </div>
+            </div>
+            
+            <div class="data-section">
+                <h2>Data yang Telah Di-scan</h2>
+                <table id="dataTable">
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Waktu</th>
+                            <th>Nama</th>
+                            <th>Alamat</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- Data akan muncul di sini -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let scannedData = [];
+        let scanning = false;
+        let videoStream = null;
+        
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const exportExcelButton = document.getElementById('exportExcel');
+        const statusElement = document.getElementById('status');
+        const lastDataElement = document.getElementById('lastData');
+        const tableBody = document.getElementById('tableBody');
+        
+        // Inisialisasi data dari localStorage jika ada
+        if (localStorage.getItem('scannedData')) {
+            scannedData = JSON.parse(localStorage.getItem('scannedData'));
+            updateTable();
+        }
+        
+        startButton.addEventListener('click', async () => {
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" }
+                });
+                
+                video.srcObject = videoStream;
+                scanning = true;
+                statusElement.textContent = "Sedang scanning...";
+                statusElement.style.color = "#4CAF50";
+                scanQRCode();
+            } catch (err) {
+                console.error("Error mengakses kamera:", err);
+                statusElement.textContent = "Gagal mengakses kamera";
+                statusElement.style.color = "#f44336";
+            }
+        });
+        
+        stopButton.addEventListener('click', () => {
+            scanning = false;
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+            statusElement.textContent = "Scan dihentikan";
+            statusElement.style.color = "#ff9800";
+        });
+        
+        function scanQRCode() {
+            if (!scanning) return;
+            
+            const canvasElement = document.getElementById('canvas');
+            const canvasContext = canvasElement.getContext('2d');
+            
+            // Set canvas size sesuai video
+            canvasElement.width = video.videoWidth;
+            canvasElement.height = video.videoHeight;
+            
+            // Gambar frame video ke canvas
+            canvasContext.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+            
+            // Ambil image data dari canvas
+            const imageData = canvasContext.getImageData(0, 0, canvasElement.width, canvasElement.height);
+            
+            // Decode QR code
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            
+            if (code) {
+                try {
+                    const data = JSON.parse(code.data);
+                    
+                    // Cek apakah data sudah pernah di-scan
+                    const isDuplicate = scannedData.some(item => 
+                        item.nama === data.nama && 
+                        item.alamat === data.alamat &&
+                        Math.abs(new Date(item.timestamp) - new Date(data.timestamp)) < 5000 // 5 detik
+                    );
+                    
+                    if (!isDuplicate) {
+                        // Tambah data baru
+                        scannedData.unshift({
+                            id: Date.now(),
+                            timestamp: data.timestamp || new Date().toISOString(),
+                            nama: data.nama,
+                            alamat: data.alamat,
+                            status: 'Berhasil'
+                        });
+                        
+                        // Simpan ke localStorage
+                        localStorage.setItem('scannedData', JSON.stringify(scannedData));
+                        
+                        // Update tampilan
+                        updateTable();
+                        lastDataElement.textContent = `${data.nama} - ${data.alamat}`;
+                        
+                        // Beri feedback sukses
+                        statusElement.textContent = "QR Code berhasil di-scan!";
+                        statusElement.style.color = "#4CAF50";
+                        
+                        // Hentikan scanning sementara
+                        scanning = false;
+                        setTimeout(() => {
+                            scanning = true;
+                            statusElement.textContent = "Sedang scanning...";
+                            scanQRCode();
+                        }, 2000);
+                    } else {
+                        statusElement.textContent = "Data sudah pernah di-scan";
+                        statusElement.style.color = "#ff9800";
+                    }
+                } catch (e) {
+                    statusElement.textContent = "Format QR Code tidak valid";
+                    statusElement.style.color = "#f44336";
+                }
+            }
+            
+            if (scanning) {
+                requestAnimationFrame(scanQRCode);
+            }
+        }
+        
+        function updateTable() {
+            tableBody.innerHTML = '';
+            scannedData.forEach((data, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td>${new Date(data.timestamp).toLocaleString('id-ID')}</td>
+                    <td>${data.nama}</td>
+                    <td>${data.alamat}</td>
+                    <td><span class="status status-success">${data.status}</span></td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+        
+        exportExcelButton.addEventListener('click', () => {
+            if (scannedData.length === 0) {
+                alert("Belum ada data untuk di-export!");
+                return;
+            }
+            
+            // Format data untuk Excel
+            const worksheetData = [
+                ["No", "Timestamp", "Nama", "Alamat", "Status"],
+                ...scannedData.map((item, index) => [
+                    index + 1,
+                    new Date(item.timestamp).toLocaleString('id-ID'),
+                    item.nama,
+                    item.alamat,
+                    item.status
+                ])
+            ];
+            
+            const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Data User");
+            
+            // Simpan file
+            const filename = `Data_User_${new Date().toISOString().split('T')[0]}.xlsx`;
+            XLSX.writeFile(workbook, filename);
+        });
+        
+        // Auto-start scanning jika diizinkan
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                startButton.click();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

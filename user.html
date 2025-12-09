@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form Data User</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+            padding: 40px;
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        
+        .form-section, .qr-section {
+            flex: 1;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+        }
+        
+        input, textarea {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+            width: 100%;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        #qrcode {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px dashed #e1e5e9;
+            border-radius: 10px;
+            min-height: 256px;
+            align-items: center;
+        }
+        
+        .qr-placeholder {
+            color: #999;
+            text-align: center;
+        }
+        
+        .download-btn {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            margin-top: 10px;
+        }
+        
+        @media (min-width: 768px) {
+            .container {
+                flex-direction: row;
+            }
+            
+            .form-section, .qr-section {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="form-section">
+            <h1>Form Data User</h1>
+            <form id="userForm">
+                <div class="form-group">
+                    <label for="nama">Nama Lengkap:</label>
+                    <input type="text" id="nama" name="nama" placeholder="Masukkan nama lengkap" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="alamat">Alamat:</label>
+                    <textarea id="alamat" name="alamat" placeholder="Masukkan alamat lengkap" required></textarea>
+                </div>
+                
+                <button type="submit">Generate QR Code</button>
+            </form>
+        </div>
+        
+        <div class="qr-section">
+            <h1>QR Code</h1>
+            <div id="qrcode">
+                <div class="qr-placeholder">
+                    QR Code akan muncul di sini setelah mengisi form
+                </div>
+            </div>
+            <button id="downloadBtn" class="download-btn" style="display: none;">
+                Download QR Code
+            </button>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('userForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const nama = document.getElementById('nama').value;
+            const alamat = document.getElementById('alamat').value;
+            
+            // Format data menjadi JSON
+            const userData = {
+                nama: nama,
+                alamat: alamat,
+                timestamp: new Date().toISOString()
+            };
+            
+            const jsonString = JSON.stringify(userData);
+            
+            // Hapus QR Code sebelumnya
+            document.getElementById('qrcode').innerHTML = '';
+            
+            // Generate QR Code baru
+            new QRCode(document.getElementById('qrcode'), {
+                text: jsonString,
+                width: 256,
+                height: 256,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+            
+            // Tampilkan tombol download
+            document.getElementById('downloadBtn').style.display = 'block';
+            
+            // Download QR Code
+            document.getElementById('downloadBtn').onclick = function() {
+                const canvas = document.querySelector('#qrcode canvas');
+                const link = document.createElement('a');
+                link.download = `QR_${nama}_${Date.now()}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            };
+        });
+    </script>
+</body>
+</html>
