@@ -164,10 +164,14 @@
             const alamat = document.getElementById('alamat').value;
             
             // Format data menjadi JSON
+            // const userData = {
+            //     nama: nama,
+            //     alamat: alamat,
+            //     timestamp: new Date().toISOString()
+            // };
             const userData = {
-                nama: nama,
-                alamat: alamat,
-                timestamp: new Date().toISOString()
+                n: document.getElementById('nama').value.trim(),
+                a: document.getElementById('alamat').value.trim().replace(/\n/g, ', ')
             };
             
             const jsonString = JSON.stringify(userData);
@@ -199,4 +203,5 @@
         });
     </script>
 </body>
+
 </html>
